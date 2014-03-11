@@ -1,7 +1,8 @@
 language: java
 jdk:
   - openjdk7
-  - oraclejdk7i
-install: mvn install -DskipTests=true -Pintegration-tests
-script: mvn verify -Pintegration-tests
+  - oraclejdk7
+install: "mvn install -DskipTests=true -Pintegration-tests -B -V"
+script: "mvn verify -Pintegration-tests -B -V"
+env: MAVEN_OPTS="-XX:MaxPermSize=128m"
 
