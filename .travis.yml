@@ -2,4 +2,6 @@ language: java
 jdk:
   - openjdk7
   - oraclejdk7i
+install: mvn install -DskipTests=true -Pintegration-tests
+script: mvn verify -Pintegration-tests
 
