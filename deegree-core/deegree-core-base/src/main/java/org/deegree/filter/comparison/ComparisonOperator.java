@@ -39,6 +39,7 @@ import java.util.List;
 
 import org.deegree.commons.tom.ElementNode;
 import org.deegree.commons.tom.TypedObjectNode;
+import org.deegree.commons.tom.gml.GMLReference;
 import org.deegree.commons.tom.gml.property.Property;
 import org.deegree.commons.tom.primitive.PrimitiveValue;
 import org.deegree.commons.utils.Pair;
@@ -139,10 +140,12 @@ public abstract class ComparisonOperator implements Operator {
             }
             return getPrimitiveValue( children.get( 0 ) );
         }
-        if ( node instanceof FeatureReference ) {
-            FeatureReference fReference= (FeatureReference) node;
-            String uri = fReference.getURI();
-            if(uri!=null)
+        if ( node instanceof GMLReference<?> ) {
+            // hack to enable the common comparison of the @xlink:href attribute even when
+            // @xlink:href is omitted from path
+            GMLReference<?> ref = (GMLReference<?>) node;
+            String uri = ref.getURI();
+            if ( uri != null )
                 return new PrimitiveValue( uri );
             else
                 return new PrimitiveValue( node.toString() );
