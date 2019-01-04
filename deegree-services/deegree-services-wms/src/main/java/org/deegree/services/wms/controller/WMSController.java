@@ -171,6 +171,8 @@ import org.deegree.workspace.ResourceMetadata;
 import org.deegree.workspace.Workspace;
 import org.slf4j.Logger;
 
+import io.prometheus.client.Histogram;
+
 /**
  * <code>WMSController</code> handles the protocol and map service globally.
  * 
@@ -217,7 +219,13 @@ public class WMSController extends AbstractOWS {
 
     private final GetMapLimitChecker getMapLimitChecker = new GetMapLimitChecker();
 
-    private SupportedEncodings supportedEncodings;    
+    private SupportedEncodings supportedEncodings;
+
+    static final Histogram requestLatency = Histogram.build()
+                            .buckets(0.1, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 30.0, 60.0)
+                            .name( "get_map_latency_seconds" )
+                            .help( "GetMap request duration in seconds." )
+                            .register();
 
     public WMSController( ResourceMetadata<OWS> metadata, Workspace workspace, DeegreeWMS jaxbConfig ) {
         super( metadata, workspace, jaxbConfig );
@@ -324,7 +332,7 @@ public class WMSController extends AbstractOWS {
 
             String configId = getMetadata().getIdentifier().getId();
             metadataProvider = workspace.getResource( OWSMetadataProviderProvider.class, configId + "_metadata" );
-            
+
             supportedEncodings = new SupportedEncodingsParser().parseEncodings( conf );
         } catch ( Exception e ) {
             throw new ResourceInitException( e.getMessage(), e );
@@ -335,7 +343,8 @@ public class WMSController extends AbstractOWS {
     @Override
     public void doKVP( Map<String, String> map, HttpServletRequest request, HttpResponseBuffer response,
                        List<FileItem> multiParts )
-                            throws ServletException, IOException {
+                            throws ServletException,
+                            IOException {
         String v = map.get( "VERSION" );
         if ( v == null ) {
             v = map.get( "WMTVER" );
@@ -378,7 +387,8 @@ public class WMSController extends AbstractOWS {
 
     private void handleRequest( WMSRequestType req, HttpResponseBuffer response, Map<String, String> map,
                                 Version version )
-                            throws IOException, OWSException {
+                            throws IOException,
+                            OWSException {
         try {
             switch ( req ) {
             case GetCapabilities:
@@ -449,19 +459,25 @@ public class WMSController extends AbstractOWS {
     }
 
     private void getLegendGraphic( Map<String, String> map, HttpResponseBuffer response )
-                            throws OWSException, IOException {
+                            throws OWSException,
+                            IOException {
         GetLegendGraphic glg = new GetLegendGraphic( map );
 
         if ( !supportedImageFormats.contains( glg.getFormat() ) ) {
-            throw new OWSException( get( "WMS.UNSUPPORTED_IMAGE_FORMAT", glg.getFormat() ), OWSException.INVALID_FORMAT );
+            throw new OWSException( get( "WMS.UNSUPPORTED_IMAGE_FORMAT", glg.getFormat() ),
+                                    OWSException.INVALID_FORMAT );
         }
         BufferedImage img = service.getLegend( glg );
         sendImage( img, response, glg.getFormat() );
     }
 
     private void getFeatureInfo( Map<String, String> map, final HttpResponseBuffer response, Version version )
-                            throws OWSException, IOException, MissingDimensionValue, InvalidDimensionValue {
-        org.deegree.protocol.wms.ops.GetFeatureInfo fi = new org.deegree.protocol.wms.ops.GetFeatureInfo( map, version );
+                            throws OWSException,
+                            IOException,
+                            MissingDimensionValue,
+                            InvalidDimensionValue {
+        org.deegree.protocol.wms.ops.GetFeatureInfo fi = new org.deegree.protocol.wms.ops.GetFeatureInfo( map,
+                                                                                                          version );
         doGetFeatureInfo( map, response, version, fi );
     }
 
@@ -497,18 +513,26 @@ public class WMSController extends AbstractOWS {
     }
 
     protected void getMap( Map<String, String> map, HttpResponseBuffer response, Version version )
-                            throws OWSException, IOException, MissingDimensionValue, InvalidDimensionValue {
-        org.deegree.protocol.wms.ops.GetMap gm2 = new org.deegree.protocol.wms.ops.GetMap( map, version,
-                                                                                           service.getExtensions() );
-
-        doGetMap( map, response, version, gm2 );
+                            throws OWSException,
+                            IOException,
+                            MissingDimensionValue,
+                            InvalidDimensionValue {
+        Histogram.Timer requestTimer = requestLatency.startTimer();
+        try {
+            org.deegree.protocol.wms.ops.GetMap gm2 = new org.deegree.protocol.wms.ops.GetMap( map, version,
+                                                                                               service.getExtensions() );
+            doGetMap( map, response, version, gm2 );
+        } finally {
+            requestTimer.observeDuration();
+        }
     }
 
     private void checkGetFeatureInfo( Version version, org.deegree.protocol.wms.ops.GetFeatureInfo gfi )
                             throws OWSException {
         if ( gfi.getInfoFormat() != null && !gfi.getInfoFormat().equals( "" )
              && !featureInfoManager.getSupportedFormats().contains( gfi.getInfoFormat() ) ) {
-            throw new OWSException( get( "WMS.INVALID_INFO_FORMAT", gfi.getInfoFormat() ), OWSException.INVALID_FORMAT );
+            throw new OWSException( get( "WMS.INVALID_INFO_FORMAT", gfi.getInfoFormat() ),
+                                    OWSException.INVALID_FORMAT );
         }
         for ( LayerRef lr : gfi.getQueryLayers() ) {
             if ( !service.hasTheme( lr.getName() ) ) {
@@ -538,7 +562,8 @@ public class WMSController extends AbstractOWS {
     private void checkGetMap( Version version, org.deegree.protocol.wms.ops.GetMap gm )
                             throws OWSException {
         if ( !supportedImageFormats.contains( gm.getFormat() ) ) {
-            throw new OWSException( get( "WMS.UNSUPPORTED_IMAGE_FORMAT", gm.getFormat() ), OWSException.INVALID_FORMAT );
+            throw new OWSException( get( "WMS.UNSUPPORTED_IMAGE_FORMAT", gm.getFormat() ),
+                                    OWSException.INVALID_FORMAT );
         }
         for ( LayerRef lr : gm.getLayers() ) {
             if ( !service.hasTheme( lr.getName() ) ) {
@@ -568,7 +593,8 @@ public class WMSController extends AbstractOWS {
     }
 
     protected void getCapabilities( Map<String, String> map, HttpResponseBuffer response )
-                            throws OWSException, IOException {
+                            throws OWSException,
+                            IOException {
         String version = map.get( "VERSION" );
         // not putting it into the bean, why should I? It's used just a few lines below...
 
@@ -583,7 +609,8 @@ public class WMSController extends AbstractOWS {
     @Override
     public void doXML( XMLStreamReader xmlStream, HttpServletRequest request, HttpResponseBuffer response,
                        List<FileItem> multiParts )
-                            throws ServletException, IOException {
+                            throws ServletException,
+                            IOException {
         Version requestVersion = null;
         try {
             String requestName = xmlStream.getLocalName();
@@ -634,7 +661,9 @@ public class WMSController extends AbstractOWS {
     public void doSOAP( org.apache.axiom.soap.SOAPEnvelope soapDoc, HttpServletRequest request,
                         HttpResponseBuffer response, java.util.List<FileItem> multiParts,
                         org.apache.axiom.soap.SOAPFactory factory )
-                            throws ServletException, IOException, org.deegree.services.authentication.SecurityException {
+                            throws ServletException,
+                            IOException,
+                            org.deegree.services.authentication.SecurityException {
         Version requestVersion = null;
         try {
 
@@ -649,7 +678,7 @@ public class WMSController extends AbstractOWS {
                 throw new OWSException( "POST/SOAP is not supported for " + requestName + " requests.",
                                         OWSException.OPERATION_NOT_SUPPORTED );
             }
-            
+
             requestVersion = parseAndCheckVersion( xmlStream );
 
             if ( WMSRequestType.GetMap.equals( requestType ) ) {
@@ -694,7 +723,8 @@ public class WMSController extends AbstractOWS {
     }
 
     public void sendImage( BufferedImage img, HttpResponseBuffer response, String format )
-                            throws OWSException, IOException {
+                            throws OWSException,
+                            IOException {
         response.setContentType( format );
 
         ImageSerializer serializer = imageSerializers.get( format );
@@ -772,7 +802,7 @@ public class WMSController extends AbstractOWS {
     /**
      * @return the supported encodings configured in the DeegreeWMS, should not be <code>null</code>
      */
-    public SupportedEncodings getSupportedEncodings(){
+    public SupportedEncodings getSupportedEncodings() {
         return supportedEncodings;
     }
 
@@ -802,7 +832,8 @@ public class WMSController extends AbstractOWS {
 
     private void doGetCapabilities( Map<String, String> map, HttpResponseBuffer response, String updateSequence,
                                     GetCapabilities req )
-                            throws OWSException, IOException {
+                            throws OWSException,
+                            IOException {
         Version myVersion = negotiateVersion( req );
 
         String getUrl = OGCFrontController.getHttpGetURL();
@@ -822,19 +853,22 @@ public class WMSController extends AbstractOWS {
     }
 
     private void doGetMap( Map<String, String> map, HttpResponseBuffer response, Version version, GetMap gm )
-                            throws OWSException, IOException {
+                            throws OWSException,
+                            IOException {
         LinkedList<String> headers = doGetMap( gm, map, version, response.getOutputStream() );
         response.setContentType( gm.getFormat() );
         addHeaders( response, headers );
     }
 
     private LinkedList<String> doGetMap( GetMap getMap, Map<String, String> map, Version version, OutputStream stream )
-                            throws OWSException, IOException {
+                            throws OWSException,
+                            IOException {
         checkGetMap( version, getMap );
 
         RenderingInfo info = new RenderingInfo( getMap.getFormat(), getMap.getWidth(), getMap.getHeight(),
                                                 getMap.getTransparent(), getMap.getBgColor(), getMap.getBoundingBox(),
-                                                getMap.getPixelSize(), map, imageSerializers.get( getMap.getFormat() ) );
+                                                getMap.getPixelSize(), map,
+                                                imageSerializers.get( getMap.getFormat() ) );
 
         RenderContext ctx = ouputFormatProvider.getRenderers( info, stream );
         LinkedList<String> headers = new LinkedList<String>();
@@ -846,7 +880,8 @@ public class WMSController extends AbstractOWS {
 
     private void doGetFeatureInfo( Map<String, String> map, final HttpResponseBuffer response, Version version,
                                    org.deegree.protocol.wms.ops.GetFeatureInfo fi )
-                            throws OWSException, IOException {
+                            throws OWSException,
+                            IOException {
         checkGetFeatureInfo( version, fi );
         ICRS crs = fi.getCoordinateSystem();
         boolean geometries = fi.returnGeometries();
@@ -860,8 +895,7 @@ public class WMSController extends AbstractOWS {
         info.setX( fi.getX() );
         info.setY( fi.getY() );
         LinkedList<String> headers = new LinkedList<String>();
-        Pair<FeatureCollection, LinkedList<String>> pair = new Pair<FeatureCollection, LinkedList<String>>(
-                                                                                                            service.getFeatures( fi,
+        Pair<FeatureCollection, LinkedList<String>> pair = new Pair<FeatureCollection, LinkedList<String>>( service.getFeatures( fi,
                                                                                                                                  headers ),
                                                                                                             headers );
 
@@ -916,10 +950,10 @@ public class WMSController extends AbstractOWS {
                     Class<?> clazz = workspace.getModuleClassLoader().loadClass( mf.getJavaClass() );
                     imageSerializer = clazz.asSubclass( ImageSerializer.class ).newInstance();
                 } catch ( ClassNotFoundException e ) {
-                    throw new IllegalArgumentException( "Couldn't find image serializer class: " + mf.getJavaClass(), e );
+                    throw new IllegalArgumentException( "Couldn't find image serializer class: " + mf.getJavaClass(),
+                                                        e );
                 } catch ( Exception e ) {
-                    throw new IllegalArgumentException(
-                                                        "Configured image serializer class doesn't implement ImageSerializer",
+                    throw new IllegalArgumentException( "Configured image serializer class doesn't implement ImageSerializer",
                                                         e );
                 }
 
@@ -943,7 +977,8 @@ public class WMSController extends AbstractOWS {
     }
 
     private void addSupportedFeatureInfoFormats( DeegreeWMS conf )
-                            throws InstantiationException, IllegalAccessException {
+                            throws InstantiationException,
+                            IllegalAccessException {
         if ( conf.getFeatureInfoFormats() != null ) {
             for ( GetFeatureInfoFormat t : conf.getFeatureInfoFormats().getGetFeatureInfoFormat() ) {
                 if ( t.getFile() != null ) {
@@ -965,8 +1000,7 @@ public class WMSController extends AbstractOWS {
                     } catch ( ClassNotFoundException e ) {
                         throw new IllegalArgumentException( "Couldn't find serializer class", e );
                     } catch ( ClassCastException e ) {
-                        throw new IllegalArgumentException(
-                                                            "Configured serializer class doesn't implement FeatureInfoSerializer",
+                        throw new IllegalArgumentException( "Configured serializer class doesn't implement FeatureInfoSerializer",
                                                             e );
                     }
 
@@ -989,7 +1023,8 @@ public class WMSController extends AbstractOWS {
     }
 
     private void addSupportedCapabilitiesFormats( DeegreeWMS conf )
-                            throws InstantiationException, IllegalAccessException {
+                            throws InstantiationException,
+                            IllegalAccessException {
         if ( conf.getGetCapabilitiesFormats() != null ) {
             for ( GetCapabilitiesFormat getCapabilitiesFormat : conf.getGetCapabilitiesFormats().getGetCapabilitiesFormat() ) {
                 if ( getCapabilitiesFormat.getXSLTFile() != null ) {
@@ -1003,7 +1038,8 @@ public class WMSController extends AbstractOWS {
     }
 
     private void addSupportedExceptionFormats( DeegreeWMS conf )
-                            throws InstantiationException, IllegalAccessException {
+                            throws InstantiationException,
+                            IllegalAccessException {
         if ( conf.getExceptionFormats() != null ) {
             for ( ExceptionFormat exceptionFormat : conf.getExceptionFormats().getExceptionFormat() ) {
                 if ( exceptionFormat.getXSLTFile() != null ) {
@@ -1074,7 +1110,10 @@ public class WMSController extends AbstractOWS {
     }
 
     private void doSoapGetMap( SOAPVersion soapVersion, HttpResponseBuffer response, XMLStreamReader xmlStream )
-                            throws OWSException, XMLStreamException, IOException, SOAPException {
+                            throws OWSException,
+                            XMLStreamException,
+                            IOException,
+                            SOAPException {
         response.setContentType( "application/xop+xml" );
 
         GetMapParser getMapParser = new GetMapParser();
@@ -1124,7 +1163,8 @@ public class WMSController extends AbstractOWS {
     }
 
     private void beginSoapResponse( org.apache.axiom.soap.SOAPEnvelope soapDoc, HttpResponseBuffer response )
-                            throws IOException, XMLStreamException {
+                            throws IOException,
+                            XMLStreamException {
         if ( isSoap11( soapDoc.getVersion() ) ) {
             beginSoap11Response( response );
         } else {
@@ -1137,7 +1177,8 @@ public class WMSController extends AbstractOWS {
     }
 
     private void beginSoap11Response( HttpResponseBuffer response )
-                            throws IOException, XMLStreamException {
+                            throws IOException,
+                            XMLStreamException {
         response.setContentType( "text/xml" );
         XMLStreamWriter xmlWriter = response.getXMLWriter();
         String soapEnvNS = "http://schemas.xmlsoap.org/soap/envelope/";
@@ -1196,7 +1237,8 @@ public class WMSController extends AbstractOWS {
                               HttpResponseBuffer response, ServiceIdentification identification,
                               ServiceProvider provider, Map<String, String> customParameters, WMSController controller,
                               OWSMetadataProvider metadata )
-                                throws OWSException, IOException;
+                                throws OWSException,
+                                IOException;
 
         /**
          * @param name
