@@ -33,6 +33,16 @@
     <url-pattern>*.xhtml</url-pattern>
   </servlet-mapping>
 
+  <servlet-mapping>
+    <servlet-name>metrics</servlet-name>
+    <url-pattern>/metrics</url-pattern>
+  </servlet-mapping>
+  <servlet>
+    <servlet-name>metrics</servlet-name>
+    <servlet-class>io.prometheus.client.exporter.MetricsServlet</servlet-class>
+    <load-on-startup>2</load-on-startup>
+  </servlet>
+
   <servlet>
     <servlet-name>services</servlet-name>
     <servlet-class>org.deegree.services.controller.OGCFrontController</servlet-class>

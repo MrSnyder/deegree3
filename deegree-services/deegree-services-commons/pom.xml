@@ -100,6 +100,11 @@
       <groupId>org.powermock</groupId>
       <artifactId>powermock-api-mockito</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.prometheus</groupId>
+      <artifactId>simpleclient</artifactId>
+      <version>0.6.0</version>
+    </dependency>
   </dependencies>
 
 </project>
